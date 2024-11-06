@@ -11,12 +11,88 @@ tag versions. The Bond compiler (`gbc`) and
 different versioning scheme, following the Haskell community's
 [package versioning policy](https://wiki.haskell.org/Package_versioning_policy).
 
-## Unreleased ##
+## Bond open-source project ending March 2025
 
-* IDL core version: TBD
-* C++ version: TBD (major bump needed)
-* C# NuGet version: TBD (major bump needed)
-* `gbc` & compiler library: TBD (major bump needed)
+The Bond open-source project will be ending development on March 31, 2025.
+For more information, see [the shutdown announcement
+issue](https://github.com/microsoft/bond/issues/1215).
+
+
+## 13.0.2: 2024-11-06 ##
+
+* IDL core version: 3.0
+* C++ version: 13.0.1
+* C# NuGet version: 13.0.2
+* Java version: 13.0.1
+* `gbc` & compiler library: 0.13.0.0
+
+### Java ###
+
+* There were no Java changes in this release.
+
+### C++ ###
+
+* There were no Java changes in this release.
+
+### C# ###
+
+* Fixed assembly versions in NuGet packages.
+
+## 13.0.1: 2024-10-02 ##
+
+* IDL core version: 3.0
+* C++ version: 13.0.1
+* C# NuGet version: 13.0.1
+* Java version: 13.0.1
+* `gbc` & compiler library: 0.13.0.0
+
+### Java ###
+
+* There were no Java changes in this release.
+
+### C++ ###
+
+* `InputBuffer` throws a `StreamException` when trying to skip beyond the 
+  end of the stream. This mitigates a CPU DoS vulnerability.
+* Deserialization from JSON payloads will no longer process very deeply
+  nested structures. Instead, a `bond::CoreException` will be thrown in
+  order to protect against stack overflows. The depth limit may be changed
+  by calling the function `bond::SetDeserializeMaxDepth(uint32_t)`.
+* **Breaking change**: Protocols must now implement `CanReadArray` method and
+  Buffers must implement `CanRead` method. These are used to perform checks that
+  mitigate memory allocation vulnerabilities.
+* **Breaking change**: Custom containers must implement `reset_list` and `list_insert`.
+  Standard implementations are provided. This API is used to incrementally fill
+  containers of complex types when preallocation may be unsafe. Expected container
+  size is provided in `reset_list`, where client code can perform sanity checks before
+  any memory is allocated by Bond.
+* `bond::CoreException` is thrown when the payload has a greater declared size
+  than the backing buffer.
+* **Known issue**: Debug builds with MSVC 14.0 (Visual Studio 2015) may fail at
+  runtime if custom allocators for containers are used. Newer MSVC versions and
+  other compilers are not affected, neither are Release builds with MSVC 14.0. This
+  can be worked around by using newer MSVC version or building in Release configuration.
+* Added support for Boost 1.83.
+
+### C# ###
+
+* Fixed compatibility with .NET 9.
+
+## 13.0 ##
+
+This version was allocated but never released.
+
+## 12.0 ##
+
+This version was allocated but never released.
+
+## 11.0.1: 2024-06-26 ##
+
+* IDL core version: 3.0
+* C++ version: 11.0.1
+* C# NuGet version: 11.0.1
+* Java version: 11.0.1
+* `gbc` & compiler library: 0.13.0.0
 
 ### `gbc` and Bond compiler library ###
 * **Breaking change**: Codegen for Bond-over-gRPC has been removed: the
@@ -34,9 +110,22 @@ different versioning scheme, following the Haskell community's
   See [issue \#1131, Bond-over-gRPC will be deprecated February
   2022](https://github.com/microsoft/bond/issues/1131), for the full
   announcement.
+* By default, deserialization will no longer process very deeply nested
+  structures. Instead, an `bond::CoreException` will be thrown in order to
+  protect against stack overflows. The depth limit may be changed by calling
+  the function `bond::SetDeserializeMaxDepth(uint32_t)`.
+* Fixed handling of large containers of invalid types that could cause
+  excessive CPU use when deserializing some payloads.
 
 ### C# ###
 
+* **Breaking change**: Update of Newtonsoft.Json library to version 13.3.0.
+([Issue \#1156](https://github.com/microsoft/bond/issues/1156))
+
+  This update fixes depth check in input JSON string (by default: 64).
+  Depth check is necessary to prevent stack overflow issue with long payloads.
+* **Breaking change**: The minimum supported version of .NET Framework is
+  4.6.2. Support for .NET Framework 4.5 has been dropped.
 * **Breaking change**: All Bond-over-gRPC code has been removed. This is
   everything under the `Bond.Grpc` namespace and the Bond.Grpc.CSharp NuGet
   package. Service definitions can still appear in .bond files, but no C#
@@ -48,6 +137,22 @@ different versioning scheme, following the Haskell community's
   [System.Collections.Immutable](https://learn.microsoft.com/dotnet/api/system.collections.immutable)
   collections. (Pull request
   [\#1161](https://github.com/microsoft/bond/pull/1161))
+* By default, deserialization will no longer process very deeply nested
+  structures. Instead, an `InvalidOperationException` will be thrown in
+  order to protect against stack overflows. The depth limit may be changed
+  by setting the property `Bond.DeserializerControls.Active.MaxDepth`.
+
+### Java ###
+
+* By default, deserialization will no longer process very deeply nested
+  structures. Instead, a `org.bondlib.InvalidBondDataException` exception
+  will be thrown in order to protect against stack overflows. The depth
+  limit may be changed by calling the method
+  `org.bondlib.bond.DeserializerControls.setMaxDepth`.
+
+## 11.0.0 ##
+
+This version was allocated but never released.
 
 ## 10.0: 2022-03-07 ##
 

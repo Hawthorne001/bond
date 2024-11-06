@@ -67,6 +67,29 @@ struct CoreException
         "Map key type not valid");
 }
 
+[[noreturn]] inline void UnknownDataTypeException()
+{
+    BOND_THROW(CoreException,
+        "Unknown data type found");
+}
+
+[[noreturn]] inline void ExceededMaxRecursionDepthException()
+{
+    BOND_THROW(CoreException,
+        "Max recursion depth exceeded");
+}
+
+[[noreturn]] inline void OutOfBoundObjectSizeException()
+{
+    BOND_THROW(CoreException,
+        "Payload had an element size larger than the input buffer");
+}
+
+[[noreturn]] inline void OutOfBoundStringSizeException()
+{
+    BOND_THROW(CoreException,
+        "Payload-specified string length exceeds the input buffer size");
+}
 
 namespace detail
 {

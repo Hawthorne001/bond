@@ -4,7 +4,7 @@
 #pragma once
 
 #include <bond/core/config.h>
-
+#include <bond/core/detail/recursionguard.h>
 #include "bonded.h"
 #include "protocol.h"
 #include "schema.h"
@@ -226,7 +226,7 @@ public:
     {
         Skip();
     }
-
+ 
 
 protected:
     Reader          _input;
@@ -674,7 +674,6 @@ inline DeserializeElement(X& var, const I& item, const T& element)
     modify_element(var, item, DeserializeImpl(element));
 }
 
-
 template <typename Protocols, typename X, typename I, typename T>
 typename boost::disable_if<require_modify_element<X> >::type
 inline DeserializeElement(X&, I& item, const T& element)
@@ -683,12 +682,12 @@ inline DeserializeElement(X&, I& item, const T& element)
 }
 
 
-// Read elements of a list
 template <typename Protocols, typename X, typename T>
-typename boost::enable_if_c<is_list_container<X>::value
-                         && is_element_matching<T, X>::value>::type
+typename boost::enable_if_c<detail::is_deserialize_direct<X, T>::value>::type
 inline DeserializeElements(X& var, const T& element, uint32_t size)
 {
+    // In lists of basic types we can easily verify buffer size (and we have done so
+    // by the time execution gets here), so it is safe to allocate the entire array. 
     resize_list(var, size);
 
     for (enumerator<X> items(var); items.more();)
@@ -697,9 +696,11 @@ inline DeserializeElements(X& var, const T& element, uint32_t size)
 
 
 template <typename Protocols, typename X, typename T>
-typename boost::enable_if<is_matching<T, X> >::type
+typename boost::enable_if_c<is_matching<T, X>::value>::type
 inline DeserializeElements(nullable<X>& var, const T& element, uint32_t size)
 {
+    // No need to guard against memory allocation attack here. Since X is nullable,
+    // at most 1 element will be allocated.
     resize_list(var, size);
 
     for (enumerator<nullable<X> > items(var); items.more(); --size)
@@ -709,6 +710,28 @@ inline DeserializeElements(nullable<X>& var, const T& element, uint32_t size)
     // However nullable can "contain" at most one element. If there are more
     // elements in the payload we skip them.
     detail::SkipElements(element, size);
+}
+
+template<typename T>
+inline T& get_ref(T& t) noexcept
+{
+    return t;
+}
+
+template <typename Protocols, typename X, typename T>
+typename boost::enable_if_c<detail::is_deserialize_incremental<X, T>::value>::type
+inline DeserializeElements(X& var, const T& element, uint32_t size)
+{
+    reset_list(var, size);
+
+    // Containers of structs cannot be easily checked. We resort to incrementally
+    // growing the array.
+    while (size--)
+    {
+        auto e(make_element(var));
+        DeserializeElement<Protocols>(var, get_ref(e), element);
+        insert_list(var, e);
+    }
 }
 
 
@@ -737,7 +760,7 @@ inline DeserializeElements(X& var, const T& element, uint32_t size)
 
 
 template <typename Protocols, typename X, typename T>
-typename boost::disable_if<is_element_matching<T, X> >::type
+typename boost::enable_if_c<!is_element_matching<T, X>::value >::type
 inline DeserializeElements(X&, const T& element, uint32_t size)
 {
     detail::SkipElements(element, size);
@@ -764,6 +787,8 @@ template <typename T, typename Reader>
 inline void SkipContainer(const T& element, Reader& input)
 {
     BOOST_STATIC_ASSERT(uses_static_parser<Reader>::value);
+
+    bond::detail::RecursionGuard guard;
 
     uint32_t size;
 
@@ -792,6 +817,8 @@ inline DeserializeContainer(X& var, const T& element, Reader& input)
     BondDataType type = GetTypeId(element);
     uint32_t     size = 0;
 
+    bond::detail::RecursionGuard guard;
+
     input.ReadContainerBegin(size, type);
 
     switch (type)
@@ -801,6 +828,8 @@ inline DeserializeContainer(X& var, const T& element, Reader& input)
         case bond::BT_LIST:
         case bond::BT_STRUCT:
         {
+            // Buffer check is not needed here since we do not preallocate here. Elements are deserialized
+            // into a growing array unless the array is of a basic type.
             if (type == GetTypeId(element))
             {
                 DeserializeElements<Protocols>(var, element, size);
@@ -813,6 +842,7 @@ inline DeserializeContainer(X& var, const T& element, Reader& input)
         }
         default:
         {
+            // Buffer checks are performed inside as needed.
             detail::BasicTypeContainer<Protocols>(var, type, input, size);
             break;
         }
@@ -829,10 +859,13 @@ inline DeserializeContainer(X& var, const T& element, Reader& input)
     BondDataType type = GetTypeId(element);
     uint32_t     size;
 
+    bond::detail::RecursionGuard guard;
+
     input.ReadContainerBegin(size, type);
 
     if (type == GetTypeId(element))
     {
+        // Buffer check is not needed here. We use a growing array for lists of nonbasic types.
         DeserializeElements<Protocols>(var, element, size);
     }
     else
@@ -850,6 +883,8 @@ inline DeserializeContainer(X& var, const T& element, Reader& input)
 {
     BondDataType type = GetTypeId(element);
     uint32_t     size;
+
+    bond::detail::RecursionGuard guard;
 
     input.ReadContainerBegin(size, type);
 
@@ -873,6 +908,7 @@ inline DeserializeContainer(X& var, const T& element, Reader& input)
         }
         default:
         {
+            // Buffer checks performed inside as needed.
             detail::MatchingTypeContainer<Protocols>(var, type, input, size);
             break;
         }
@@ -885,6 +921,8 @@ inline DeserializeContainer(X& var, const T& element, Reader& input)
 template <typename Protocols, typename Transform>
 void DeserializeMap(const Transform& transform, BondDataType keyType, const value<void, SchemaReader&>& element, SchemaReader& input)
 {
+    bond::detail::RecursionGuard guard;
+
     switch (element.GetTypeId())
     {
     case bond::BT_SET:
@@ -950,6 +988,8 @@ inline void SkipMap(BondDataType keyType, const T& element, Reader& input)
 {
     BOOST_STATIC_ASSERT(uses_static_parser<Reader>::value);
 
+    bond::detail::RecursionGuard guard;
+
     uint32_t size;
 
     {
@@ -968,6 +1008,8 @@ template <typename Protocols, typename X, typename T, typename Reader>
 typename boost::disable_if<is_container<X> >::type
 inline DeserializeMap(X& var, BondDataType keyType, const T& element, Reader& input)
 {
+    bond::detail::RecursionGuard guard;
+
     std::pair<BondDataType, BondDataType> type(keyType, GetTypeId(element));
     uint32_t                              size = 0;
 
@@ -1005,6 +1047,8 @@ template <typename Protocols, typename X, typename T, typename Reader>
 typename boost::enable_if<is_nested_container<X> >::type
 inline DeserializeMap(X& var, BondDataType keyType, const T& element, Reader& input)
 {
+    bond::detail::RecursionGuard guard;
+
     std::pair<BondDataType, BondDataType> type(keyType, GetTypeId(element));
     uint32_t                              size;
 
@@ -1027,6 +1071,8 @@ template <typename Protocols, typename X, typename T, typename Reader>
 typename boost::enable_if<is_basic_container<X> >::type
 inline DeserializeMap(X& var, BondDataType keyType, const T& element, Reader& input)
 {
+    bond::detail::RecursionGuard guard;
+
     std::pair<BondDataType, BondDataType> type(keyType, GetTypeId(element));
     uint32_t                              size;
 
@@ -1062,7 +1108,6 @@ inline DeserializeMap(X& var, BondDataType keyType, const T& element, Reader& in
 
     input.ReadContainerEnd();
 }
-
 
 } // namespace bond
 
